@@ -1,0 +1,100 @@
+name: Run CI (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        required: false
+        description: Stringified JSON array of labels, e.g. '["self-hosted"]'
+        type: string
+        default: '["self-hosted", "can-run-medium-job"]'
+      push-image-to-ecr:
+        required: false
+        description: Push image to ecr
+        type: boolean
+        default: false
+    secrets:
+      GH_ACTIONS_HARBOR_LOGIN:
+        required: true
+        description: Harbor login to pull images
+      GH_ACTIONS_HARBOR_PASSWORD:
+        required: true
+        description: Harbor password to pull images
+    outputs:
+      image_tag:
+        description: Image tag that has been built and pushed to ECR
+        value: ${{ jobs.build_and_push.outputs.image_tag }}
+
+jobs:
+  build_and_push:
+    name: Build and push app image
+    timeout-minutes: 20
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    outputs:
+      image_tag: ${{ steps.build.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to Harbor
+        uses: docker/login-action@v2
+        with:
+          registry: harbor.tools.improvado.io
+          username: ${{ secrets.GH_ACTIONS_HARBOR_LOGIN }}
+          password: ${{ secrets.GH_ACTIONS_HARBOR_PASSWORD }}
+      - name: Build image
+        id: build
+        env:
+          ECR_REPO: dummy-data-generator
+          TAG: ${{github.ref_name}}-${{github.run_number}}-${{github.run_attempt}}
+        run: |
+          IMAGE_NAME="${ECR_REPO}:${TAG}"
+          
+          docker build . \
+          --tag ${IMAGE_NAME}
+          
+          echo "image=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Configure Global Management us-east-1 AWS credentials
+        if: ${{ inputs.push-image-to-ecr }}
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::627003544259:role/github_actions_ecr_dummy-data-generator
+          role-session-name: github_actions_ci_dummy-data-generator
+          aws-region: us-east-1
+          mask-aws-account-id: "no"
+
+      - name: Login to Global Management us-east-1 Amazon ECR
+        if: ${{ inputs.push-image-to-ecr }}
+        id: login-ecr-global-management-us
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Push dummy-data-generator to Global Management us-east-1
+        if: ${{ inputs.push-image-to-ecr }}
+        run: |
+          IMAGE_FULL_NAME=${{steps.login-ecr-global-management-us.outputs.registry}}/${{steps.build.outputs.image}}
+          docker tag ${{steps.build.outputs.image}} ${IMAGE_FULL_NAME}
+          docker push ${IMAGE_FULL_NAME}
+
+      - name: Change AWS region from us-east-1 to eu-central-1
+        if: ${{ inputs.push-image-to-ecr }}
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-region: eu-central-1
+
+      - name: Login to Global Management eu-central-1 Amazon ECR
+        if: ${{ inputs.push-image-to-ecr }}
+        id: login-ecr-global-management-eu
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Push dummy-data-generator to Global Management eu-central-1
+        if: ${{ inputs.push-image-to-ecr }}
+        run: |
+          IMAGE_FULL_NAME=${{steps.login-ecr-global-management-eu.outputs.registry}}/${{steps.build.outputs.image}}
+          docker tag ${{steps.build.outputs.image}} ${IMAGE_FULL_NAME}
+          docker push ${IMAGE_FULL_NAME}
+
+      - name: Add notice
+        if: ${{ inputs.push-image-to-ecr }}
+        run: |
+          echo "::notice title=Pushed image::dummy-data-generator that's been pushed: ${{steps.build.outputs.image}}"

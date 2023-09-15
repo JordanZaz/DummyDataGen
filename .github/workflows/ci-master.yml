@@ -1,0 +1,67 @@
+name: Run CI Master
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run_ci:
+    name: Run CI
+    uses: tekliner/dummy-data-generator/.github/workflows/ci-reusable.yml@master
+    with:
+      push-image-to-ecr: true
+    secrets:
+      GH_ACTIONS_HARBOR_LOGIN: ${{ secrets.GH_ACTIONS_HARBOR_LOGIN }}
+      GH_ACTIONS_HARBOR_PASSWORD: ${{ secrets.GH_ACTIONS_HARBOR_PASSWORD }}
+  deploy_lisbon:
+    name: Deploy Dummy data generator to Lisbon k8s cluster
+    timeout-minutes: 20
+    runs-on: [ "self-hosted", "can-run-small-job" ]
+    needs:
+      - run_ci
+    env:
+      KUBECONFIG: /config/kubeconfig_iam_internal.yaml
+    steps:
+      - uses: actions/checkout@v3
+      # Build helm chart. Helm login to global-management ecr. Download all deps and build chart.
+      - name: Login to global-management ECR
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::627003544259:role/github_actions_ecr_helm-basic
+          role-session-name: github_actions_ci_helm-basic-lisbon
+          aws-region: eu-central-1
+          mask-aws-account-id: "no"
+      - name: Helm login to global-management ECR
+        run: |
+          aws ecr get-login-password --region eu-central-1 | helm3 registry login --username AWS --password-stdin 627003544259.dkr.ecr.eu-central-1.amazonaws.com
+      - name: Download helm chart deps
+        run: |
+          helm3 dependency build ./k8s/charts/helm-dummy-data-generator
+      - name: Configure AWS Lisbon Prod credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::627003544259:role/github_actions_ecr_dummy-data-generator
+          role-session-name: github_actions_ci_dummy-data-generator-lisbon
+          aws-region: us-east-1
+          mask-aws-account-id: "no"
+      - name: Install/upgrade helm chart to Kubernetes cluster
+        env:
+          HELM_CHART_RELEASE: dummy-data-generator
+          IMAGE_TAG: ${{needs.run_ci.outputs.image_tag}}
+        run: |
+          helm3 upgrade ${HELM_CHART_RELEASE} ./k8s/charts/helm-dummy-data-generator \
+            --install \
+            --wait \
+            --values ./k8s/values/dummy-data-generator_lisbon_values.yaml \
+            --set helm-basic.image.tag=${IMAGE_TAG} \
+            --namespace dummy-data-generator \
+            --timeout 15m0s \
+            --debug

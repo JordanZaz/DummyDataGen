@@ -1,0 +1,62 @@
+fullnameOverride: dummy-data-generator
+
+helm-basic:
+  componentName: "dummy-data-generator"
+  podmonitorName: "dummy-data-generator"
+
+  image:
+    repository: 627003544259.dkr.ecr.us-east-1.amazonaws.com/dummy-data-generator
+    tag: WILL_BE_REPLACED_IN_CI
+
+  podmonitor:
+    prometheus.improvado.io/area: improvado-application
+
+  deployments:
+    dummy-data-generator:
+      replicas: 1
+      resources:
+        limits:
+          cpu: 200m
+          memory: 256Mi
+        requests:
+          cpu: 200m
+          memory: 256Mi
+      env:
+        - name: STATIC_URL_PATH
+          value: "/"
+        - name: AGENCY_ID
+          value: "8730"
+        - name: USERNAME
+          value: "basis"
+        - name: PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: PASSWORD
+              name: dummy-data-generator-secrets
+
+        - name: CLICKHOUSE_HOST
+          value: clickhouse-clickhouse-poc.clickhouse
+        - name: CLICKHOUSE_PORT
+          value: "8123"
+        - name: CLICKHOUSE_USERNAME
+          value: services_dummy_data
+        - name: CLICKHOUSE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: CLICKHOUSE_PASSWORD
+              name: dummy-data-generator-secrets
+
+        - name: SENTRY_DSN
+          valueFrom:
+            secretKeyRef:
+              name: dummy-data-generator-secrets
+              key: SENTRY_DSN
+        - name: SENTRY_ENV
+          value: production
+
+
+  externalSecrets:
+    secrets:
+      - secretKey: PASSWORD
+      - secretKey: CLICKHOUSE_PASSWORD
+      - secretKey: SENTRY_DSN

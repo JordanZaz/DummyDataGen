@@ -1,0 +1,11 @@
+apiVersion: v2
+appVersion: 1.0.0
+description: A Helm chart for deploying dummy-data-generator to Kubernetes
+name: helm-dummy-data-generator
+type: application
+version: 0.1.0
+
+dependencies:
+- name: helm-basic
+  repository: oci://627003544259.dkr.ecr.eu-central-1.amazonaws.com
+  version: v5.1-master

@@ -1,0 +1,25 @@
+networkPolicy:
+  enabled: false
+  lisbonType: false
+
+helm-basic:
+  componentName: dummy-data-generator
+  imagePullSecrets: []
+  image:
+    repository: 627003544259.dkr.ecr.eu-central-1.amazonaws.com/dummy-data-generator
+    tag: WILL_BE_REPLACED_IN_CI
+
+  podmonitor:
+    name: dummy-data-generator
+    area: improvado1
+
+  serviceEnabled: true
+  livenessProbesEnabled: false
+  readinessProbesEnabled: false
+
+  deployments:
+    dummy-data-generator:
+      ports:
+        - containerPort: 5000
+          name: http
+
